@@ -13,7 +13,7 @@
 ### Quarkmasse
 
     * 1 Kaffetasse Öl
-    * 1 Ei
+    * 2 Eier
     * 150 gr Zucker
     * 500 gr Magerquark
     * 2 Pkg Vanillepudding
