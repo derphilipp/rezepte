@@ -24,7 +24,7 @@
 
 ## Zubereitung
 
-1. Seitenteile eine Springform einfetten
+1. Seitenteile einer Springform einfetten
 2. Mürbeteig durchkneten bis ein schöner, gerade nicht mehr bröseliger Teig entsteht (Milch!. Auf den Boden einer Springform ausbreiten
 3. Rand der Springform mit Öl benetzen und mit etwas Gries bestreuen
 4. Quarkmasse zubereiten und auf den Mürbeteig geben
