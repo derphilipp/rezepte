@@ -29,22 +29,22 @@ jobs:
           find . -name "*.cook" -type f | head -10
           echo "Total .cook files found: $(find . -name "*.cook" -type f | wc -l)"
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install CookCLI
+      - name: Download CookCLI Binary
         run: |
-          echo "Installing CookCLI..."
-          cargo install cookcli
-          which cook
-          cook --version
+          echo "=== Downloading CookCLI Binary ==="
+          wget -q https://github.com/cooklang/cookcli/releases/latest/download/cook-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf cook-x86_64-unknown-linux-musl.tar.gz
+          chmod +x cook
+          rm cook-x86_64-unknown-linux-musl.tar.gz
+
+          echo "✓ CookCLI installed"
+          ./cook --version
 
       - name: Start Cook Server
         run: |
           echo "=== Starting Cook Server ==="
 
-          # Wichtig: Richtiger Syntax mit 0.0.0.0 ODER leer lassen
-          cook server . --host 0.0.0.0 --port 9080 > server.log 2>&1 &
+          ./cook server . --host 0.0.0.0 --port 9080 > server.log 2>&1 &
           SERVER_PID=$!
           echo $SERVER_PID > server.pid
           echo "Server PID: $SERVER_PID"
@@ -69,7 +69,6 @@ jobs:
             # Versuche zu verbinden
             if curl -f -s http://localhost:9080 > /dev/null 2>&1; then
               echo "✓ Server is ready after $COUNTER seconds!"
-              # Test: Hole die erste Seite
               echo ""
               echo "=== Server Health Check ==="
               curl -s http://localhost:9080 | head -20
@@ -93,7 +92,6 @@ jobs:
           echo "=== Starting Website Mirror with wget ==="
           mkdir -p dist
 
-          # Einfache wget-Variante - sehr zuverlässig
           wget --recursive \
                --convert-links \
                --adjust-extension \
@@ -109,8 +107,6 @@ jobs:
           echo ""
           echo "=== wget Exit Code: $WGET_EXIT ==="
 
-          # wget exit codes > 0 können ok sein
-          # 0 = Perfect, 1 = Parse error, 2+ = Network errors aber meist ok
           if [ $WGET_EXIT -gt 8 ]; then
             echo "WARNING: wget had issues, but continuing..."
           fi
