@@ -89,27 +89,31 @@ jobs:
 
       - name: Mirror Website with wget
         run: |
-          echo "=== Starting Website Mirror with wget ==="
-          mkdir -p dist
+            echo "=== Starting Website Mirror with wget ==="
+            mkdir -p dist
 
-          wget --recursive \
-               --convert-links \
-               --adjust-extension \
-               --page-requisites \
-               --no-parent \
-               --no-host-directories \
-               --directory-prefix=./dist \
-               --timeout=10 \
-               --tries=2 \
-               http://localhost:9080/
+            set +e  # IGNORE non-zero exit code
+            wget --recursive \
+                --convert-links \
+                --adjust-extension \
+                --page-requisites \
+                --no-parent \
+                --no-host-directories \
+                --directory-prefix=./dist \
+                --timeout=10 \
+                --tries=2 \
+                http://localhost:9080/
+            WGET_EXIT=$?
+            echo ""
+            echo "=== wget Exit Code: $WGET_EXIT ==="
 
-          WGET_EXIT=$?
-          echo ""
-          echo "=== wget Exit Code: $WGET_EXIT ==="
+            set -e
 
-          if [ $WGET_EXIT -gt 8 ]; then
-            echo "WARNING: wget had issues, but continuing..."
-          fi
+            # A few errors (code 8) are accepted for static crawling!
+            if [ $WGET_EXIT -ge 9 ]; then
+            echo "wget failed hard, deploy aborted"
+            exit 1
+            fi
 
       - name: Stop Server
         if: always()
