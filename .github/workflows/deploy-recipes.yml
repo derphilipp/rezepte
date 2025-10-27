@@ -1,0 +1,60 @@
+# .github/workflows/deploy-recipes.yml
+name: Deploy Static Recipe Site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Repository auschecken
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # 2. CookCLI installieren
+      - name: Install CookCLI
+        run: |
+          wget https://github.com/cooklang/cookcli/releases/latest/download/cook-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf cook-*.tar.gz
+          chmod +x cook
+          sudo mv cook /usr/local/bin/
+
+      # 3. Server im Hintergrund starten
+      - name: Start Cook Server
+        run: |
+          cook server ./recipes --host 0.0.0.0 --port 9080 &
+          echo $! > server.pid
+          # Warte bis Server bereit
+          timeout 30 sh -c 'until curl -f http://localhost:9080; do sleep 1; done'
+
+      # 4. Website mit wget spiegeln
+      - name: Mirror Website with wget
+        run: |
+          wget --mirror \
+               --convert-links \
+               --adjust-extension \
+               --page-requisites \
+               --no-parent \
+               --no-host-directories \
+               --directory-prefix=./dist \
+               http://localhost:9080
+
+      # 5. Server stoppen
+      - name: Stop Server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+      # 6. Zu GitHub Pages deployen
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          cname: derphilipp.github.io/rezepte  # Optional: Custom Domain
