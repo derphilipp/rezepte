@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/gh-page-builder
   workflow_dispatch:
 
 permissions:
