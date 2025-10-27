@@ -3,7 +3,9 @@ name: Deploy Static Recipe Site
 
 on:
   push:
-    branches: [main]
+    branches:
+        - main
+        - feature/gh-page-builder
   workflow_dispatch:
 
 jobs:
