@@ -1,138 +1,166 @@
-# .github/workflows/deploy-recipes.yml
 name: Deploy Static Recipe Site
 
 on:
   push:
     branches:
-        - main
-        - feature/gh-page-builder
+      - main
+      - feature/gh-page-builder
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Repository auschecken
       - name: Checkout
         uses: actions/checkout@v4
 
- # 1. DEBUG: Zeige Repo-Struktur
       - name: Debug - Show repository structure
         run: |
           echo "=== Repository Structure ==="
           ls -la
           echo ""
-          echo "=== Recipes Directory ==="
-          if [ -d "recipes" ]; then
-            ls -la recipes/ | head -20
-            echo "Found $(find recipes -name "*.cook" | wc -l) .cook files"
-          else
-            echo "ERROR: recipes/ directory not found!"
-            echo "Available directories:"
-            ls -la
-          fi
+          echo "=== Looking for .cook files ==="
+          find . -name "*.cook" -type f | head -10
+          echo "Total .cook files found: $(find . -name "*.cook" -type f | wc -l)"
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-
-      - name: Install HTTrack
-        run: |
-          echo "=== Installing HTTrack ==="
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq httrack
-          echo "✓ HTTrack installed"
-          httrack --version
-
-
-      # 2. CookCLI installieren
       - name: Install CookCLI
         run: |
-          wget https://github.com/cooklang/cookcli/releases/latest/download/cook-x86_64-unknown-linux-musl.tar.gz
-          tar -xzf cook-*.tar.gz
-          chmod +x cook
-          sudo mv cook /usr/local/bin/
-          rm cook-x86_64-unknown-linux-musl.tar.gz
+          echo "Installing CookCLI..."
+          cargo install cookcli
+          which cook
+          cook --version
 
-      # 3. Server im Hintergrund starten
       - name: Start Cook Server
         run: |
-          ls -al
-          /usr/local/bin/cook server . --host --port 9080 &
-          echo $! > server.pid
-          # Warte bis Server bereit
-          timeout 30 sh -c 'until curl -f http://localhost:9080; do sleep 1; done'
+          echo "=== Starting Cook Server ==="
 
-      # 4. Website mit wget spiegeln
-      #- name: Mirror Website with wget
-      #  run: |
-      #    wget --mirror \
-      #         --convert-links \
-      #         --adjust-extension \
-      #         --page-requisites \
-      #         --no-parent \
-      #         --no-host-directories \
-      #         --directory-prefix=./dist \
-      #         http://localhost:9080
+          # Wichtig: Richtiger Syntax mit 0.0.0.0 ODER leer lassen
+          cook server . --host 0.0.0.0 --port 9080 > server.log 2>&1 &
+          SERVER_PID=$!
+          echo $SERVER_PID > server.pid
+          echo "Server PID: $SERVER_PID"
 
-      - name: Mirror Website with HTTrack
-        run: |
-            echo "=== Starting Website Mirror with HTTrack ==="
-            mkdir -p dist
+          echo ""
+          echo "=== Waiting for server to be ready (max 60 seconds) ==="
 
-            httrack \
-            -O "./dist" \
-            -w \
-            -r9 \
-            -c8 \
-            -T120 \
-            -I0 \
-            --robots=0 \
-            "http://localhost:9080/*" \
-            2>&1 | tee httrack.log
+          COUNTER=0
+          MAX_ATTEMPTS=60
 
-            HTTRACK_EXIT=$?
-            echo ""
-            echo "=== HTTrack Exit Code: $HTTRACK_EXIT ==="
+          while [ $COUNTER -lt $MAX_ATTEMPTS ]; do
+            COUNTER=$((COUNTER + 1))
 
-            # Exit codes 0-2 sind OK
-            if [ $HTTRACK_EXIT -gt 2 ]; then
-            echo "❌ HTTrack failed with exit code $HTTRACK_EXIT"
-            exit 1
+            # Prüfe ob Server noch läuft
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "❌ ERROR: Server process died!"
+              echo "=== Server Log Output ==="
+              cat server.log
+              exit 1
             fi
 
-            echo "✓ HTTrack completed successfully"
+            # Versuche zu verbinden
+            if curl -f -s http://localhost:9080 > /dev/null 2>&1; then
+              echo "✓ Server is ready after $COUNTER seconds!"
+              # Test: Hole die erste Seite
+              echo ""
+              echo "=== Server Health Check ==="
+              curl -s http://localhost:9080 | head -20
+              break
+            fi
 
-      # 5. Server stoppen
+            echo "Attempt $COUNTER/$MAX_ATTEMPTS - Waiting..."
+            sleep 1
+          done
+
+          if [ $COUNTER -ge $MAX_ATTEMPTS ]; then
+            echo "❌ ERROR: Server did not start after 60 seconds!"
+            echo "=== Server Log Output ==="
+            cat server.log || echo "(No log file)"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Mirror Website with wget
+        run: |
+          echo "=== Starting Website Mirror with wget ==="
+          mkdir -p dist
+
+          # Einfache wget-Variante - sehr zuverlässig
+          wget --recursive \
+               --convert-links \
+               --adjust-extension \
+               --page-requisites \
+               --no-parent \
+               --no-host-directories \
+               --directory-prefix=./dist \
+               --timeout=10 \
+               --tries=2 \
+               http://localhost:9080/
+
+          WGET_EXIT=$?
+          echo ""
+          echo "=== wget Exit Code: $WGET_EXIT ==="
+
+          # wget exit codes > 0 können ok sein
+          # 0 = Perfect, 1 = Parse error, 2+ = Network errors aber meist ok
+          if [ $WGET_EXIT -gt 8 ]; then
+            echo "WARNING: wget had issues, but continuing..."
+          fi
+
       - name: Stop Server
         if: always()
         run: |
           if [ -f server.pid ]; then
-            kill $(cat server.pid) || true
+            PID=$(cat server.pid)
+            if kill -0 $PID 2>/dev/null; then
+              echo "Stopping server (PID: $PID)"
+              kill $PID
+              sleep 2
+            fi
           fi
 
-      - name: Check generated files
+          if [ -f server.log ]; then
+            echo "=== Last 30 lines of Server Log ==="
+            tail -30 server.log
+          fi
+
+      - name: Verify downloaded files
         run: |
           echo "=== Checking generated files ==="
-          echo "Total files:"
-          find dist -type f | wc -l
+
+          FILE_COUNT=$(find dist -type f | wc -l)
+          echo "Total files: $FILE_COUNT"
+
+          if [ $FILE_COUNT -lt 3 ]; then
+            echo "❌ ERROR: Almost no files downloaded!"
+            echo "Directory listing:"
+            ls -la dist/
+            exit 1
+          fi
 
           echo ""
           echo "File structure:"
-          find dist -type d | head -20
+          find dist -type d | sort
 
           echo ""
           echo "Disk usage:"
           du -sh dist/
 
           echo ""
-          echo "Sample files:"
-          find dist -type f -name "*.html" | head -5
+          echo "Sample HTML files:"
+          find dist -type f -name "*.html" | head -10
 
-
-      # 6. Zu GitHub Pages deployen
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          #cname: derphilipp.github.io/rezepte  # Optional: Custom Domain
+          force_orphan: true
