@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "=== Starting Cook Server ==="
 
-          ./cook server . --host 0.0.0.0 --port 9080 > server.log 2>&1 &
+          ./cook server . --host --port 9080 > server.log 2>&1 &
           SERVER_PID=$!
           echo $SERVER_PID > server.pid
           echo "Server PID: $SERVER_PID"
